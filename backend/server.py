@@ -164,6 +164,11 @@ class AllowedEmailsInput(BaseModel):
     emails: List[str]
 
 
+class SingleEmailInput(BaseModel):
+    name: str = ""
+    email: str
+
+
 class RoleInput(BaseModel):
     role: str  # "admin" | "parent"
 
@@ -361,6 +366,22 @@ async def add_allowed_emails(data: AllowedEmailsInput, admin: dict = Depends(req
     return {"added": added}
 
 
+@api_router.post("/admin/allowed-emails/single")
+async def add_single_allowed_email(data: SingleEmailInput, admin: dict = Depends(require_admin)):
+    email = data.email.lower().strip()
+    if "@" not in email or "." not in email:
+        raise HTTPException(status_code=400, detail="Courriel invalide")
+    name = data.name.strip()
+    existing = await db.allowed_emails.find_one({"email": email})
+    if existing:
+        if name:
+            await db.allowed_emails.update_one({"email": email}, {"$set": {"name": name}})
+            return {"message": "Nom mis à jour"}
+        raise HTTPException(status_code=400, detail="Ce courriel est déjà dans la liste")
+    await db.allowed_emails.insert_one({"email": email, "name": name, "created_at": datetime.now(timezone.utc).isoformat()})
+    return {"message": "Courriel ajouté"}
+
+
 @api_router.post("/admin/allowed-emails/csv")
 async def import_allowed_emails_csv(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
     raw = (await file.read())
@@ -486,7 +507,22 @@ async def cover_info(user: dict = Depends(get_current_user)):
 
 # ---------------- Excel export ----------------
 @api_router.get("/admin/export")
-async def export_excel(admin: dict = Depends(require_admin)):
+async def export_excel(request: Request, token: Optional[str] = Query(None)):
+    # Allow auth via query-param token (for opening in a new browser tab) or Authorization header
+    jwt_token = token
+    if not jwt_token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            jwt_token = auth_header[7:]
+    if not jwt_token:
+        raise HTTPException(status_code=401, detail="Non authentifié")
+    try:
+        payload = jwt.decode(jwt_token, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
+        user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Jeton invalide")
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Accès réservé à l'administrateur")
     classes = await db.classes.find().sort("group_number", 1).to_list(1000)
     wb = Workbook()
     ws = wb.active

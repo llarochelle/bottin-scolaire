@@ -247,6 +247,91 @@ class TestCoverExport:
         assert "spreadsheetml" in ct, f"bad content-type: {ct}"
         assert len(r.content) > 100
 
+    def test_export_excel_token_query(self, admin_token):
+        """New: export must accept ?token=<jwt> for new-tab download."""
+        r = requests.get(f"{API}/admin/export", params={"token": admin_token}, timeout=60)
+        assert r.status_code == 200, f"expected 200, got {r.status_code} {r.text[:200]}"
+        ct = r.headers.get("content-type", "")
+        assert "spreadsheetml" in ct, f"bad content-type: {ct}"
+        assert len(r.content) > 100
+        # Verify it's a valid xlsx (PK zip header)
+        assert r.content[:2] == b"PK", "Not a valid xlsx file"
+
+    def test_export_excel_bad_token(self):
+        r = requests.get(f"{API}/admin/export", params={"token": "not-a-valid-jwt"}, timeout=30)
+        assert r.status_code == 401
+
+    def test_export_excel_no_token(self):
+        r = requests.get(f"{API}/admin/export", timeout=30)
+        assert r.status_code == 401
+
+    def test_export_excel_parent_token_forbidden(self, parent_token):
+        """Parent token must get 403."""
+        r = requests.get(f"{API}/admin/export", params={"token": parent_token}, timeout=30)
+        assert r.status_code == 403, f"expected 403 for parent token, got {r.status_code} {r.text[:200]}"
+
+
+# ---------- single email add with name (new feature) ----------
+class TestSingleEmailAdd:
+    def test_add_single_with_name(self, admin_headers):
+        e = f"claire_{uuid.uuid4().hex[:6]}@exemple.ca"
+        r = requests.post(
+            f"{API}/admin/allowed-emails/single",
+            json={"name": "Claire Test", "email": e},
+            headers=admin_headers, timeout=30,
+        )
+        assert r.status_code == 200, f"single add: {r.status_code} {r.text}"
+        assert "ajout" in r.json().get("message", "").lower()
+        # Verify list contains name + email
+        r2 = requests.get(f"{API}/admin/allowed-emails", headers=admin_headers, timeout=30)
+        assert r2.status_code == 200
+        rec = next((x for x in r2.json() if x["email"] == e), None)
+        assert rec is not None, "Newly added email not found in list"
+        assert rec.get("name") == "Claire Test", f"Name mismatch: {rec}"
+        # Cleanup
+        requests.delete(f"{API}/admin/allowed-emails/{e}", headers=admin_headers, timeout=30)
+
+    def test_add_single_invalid_email_returns_400(self, admin_headers):
+        r = requests.post(
+            f"{API}/admin/allowed-emails/single",
+            json={"name": "Bad", "email": "pasbon"},
+            headers=admin_headers, timeout=30,
+        )
+        assert r.status_code in (400, 422), f"expected 400/422, got {r.status_code} {r.text}"
+
+    def test_add_existing_email_updates_name(self, admin_headers):
+        e = f"upd_{uuid.uuid4().hex[:6]}@exemple.ca"
+        r1 = requests.post(f"{API}/admin/allowed-emails/single",
+                           json={"name": "Old Name", "email": e},
+                           headers=admin_headers, timeout=30)
+        assert r1.status_code == 200
+        # Re-add with new name -> should update
+        r2 = requests.post(f"{API}/admin/allowed-emails/single",
+                           json={"name": "New Name", "email": e},
+                           headers=admin_headers, timeout=30)
+        assert r2.status_code == 200, f"update name: {r2.status_code} {r2.text}"
+        # Verify
+        r3 = requests.get(f"{API}/admin/allowed-emails", headers=admin_headers, timeout=30)
+        rec = next((x for x in r3.json() if x["email"] == e), None)
+        assert rec is not None and rec.get("name") == "New Name", f"Name not updated: {rec}"
+        # Cleanup
+        requests.delete(f"{API}/admin/allowed-emails/{e}", headers=admin_headers, timeout=30)
+
+    def test_purge_all_emails(self, admin_headers):
+        # Add 2, purge, ensure all deleted (then re-add parent so other tests still pass)
+        e1 = f"purge1_{uuid.uuid4().hex[:6]}@exemple.ca"
+        e2 = f"purge2_{uuid.uuid4().hex[:6]}@exemple.ca"
+        requests.post(f"{API}/admin/allowed-emails/single", json={"name": "A", "email": e1}, headers=admin_headers, timeout=30)
+        requests.post(f"{API}/admin/allowed-emails/single", json={"name": "B", "email": e2}, headers=admin_headers, timeout=30)
+        r = requests.delete(f"{API}/admin/allowed-emails", headers=admin_headers, timeout=30)
+        assert r.status_code == 200
+        assert "deleted" in r.json()
+        r2 = requests.get(f"{API}/admin/allowed-emails", headers=admin_headers, timeout=30)
+        assert r2.status_code == 200
+        assert r2.json() == []
+        # Restore parent email so subsequent tests still work
+        requests.post(f"{API}/admin/allowed-emails", json={"emails": [PARENT_EMAIL]}, headers=admin_headers, timeout=30)
+
 
 # ---------- change password ----------
 class TestChangePassword:

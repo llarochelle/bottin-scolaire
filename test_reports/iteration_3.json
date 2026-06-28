@@ -1,0 +1,38 @@
+{
+  "summary": "Verified iteration 3 changes: (a) authorized emails redesigned as a list with name+email rows and red 'Effacer' delete button, (b) single email add with name updates list correctly, (c) Excel export now uses window.open(`${API}/api/admin/export?token=<jwt>`) which works in the preview iframe. Backend pytest: 33/33 passed (including 5 new tests for export token query param + parent 403 + single-email add/update/invalid/purge). Frontend Playwright: admin login -> Courriels autorisés -> add 'Claire Test' + 'claire.test+<rand>@exemple.ca' -> row shows both name and email; search filter works; Effacer button (with confirm dialog) removes the row; invalid 'pasbon' rejected (no row added, backend returns 400). Export tab: clicking 'Télécharger le fichier Excel' triggered a real browser download with suggested_filename 'bottin_scolaire.xlsx' (captured via page.expect_download); success toast 'Génération du fichier Excel…' shown, no 'Échec de l\\'export' error toast.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_bottin.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Admin.jsx ExportTab.download() correctly uses window.open(url,'_blank') with the JWT as ?token=<...> query param; falls back to window.location.assign(url) if the popup is blocked. This is the right approach for the sandboxed Emergent preview iframe.",
+    "Backend GET /api/admin/export accepts the JWT via either ?token=<...> query param OR Authorization: Bearer header. Returns 401 on bad/missing token and 403 on non-admin token — verified via pytest.",
+    "POST /api/admin/allowed-emails/single validates email with '@' AND '.' check (manual regex), and updates the name in-place if the email already exists with a non-empty name. Returns 400 on invalid emails. Solid.",
+    "EmailsTab list rendering uses data-testid email-row-<email> and delete-email-<email> — correct, matches the testing spec. Each row shows name (or 'Sans nom' fallback) and email.",
+    "MINOR (pre-existing, unrelated to this iteration): React dev-tool instrumentation wraps dynamic <option> text in a <span style='display:contents'>, producing a console hydration warning '<span> cannot be a child of <option>'. Cosmetic console noise only — does not affect functionality. Source is Directory.jsx ~line 87 (class filter select). Likely from a build-time JSX transformer; safe to ignore unless a deeper cleanup is requested.",
+    "MINOR: ExportTab uses toast.success('Génération du fichier Excel…') which is shown immediately on click even if the new tab fails. Acceptable since window.open returning null falls back to top-level navigation, but main agent could surface a more accurate confirmation if needed."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_bottin.py (added TestSingleEmailAdd class + 4 new export auth tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (33/33 pytest)",
+    "frontend": "100% (single-add+list+delete+search+invalid-email+export all PASS)"
+  },
+  "test_credentials": "Admin admin@bottin.ca / admin123 (working); parent auto-provisioned via PARENT_EMAIL.",
+  "seed_data_creation": "No persistent seed; all test emails created during the run are cleaned up by the tests themselves; parent fixture email kept for cross-class fixtures.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 3 changes verified working end-to-end. EmailsTab now uses a vertical list (data-testid=email-row-<email>) with delete buttons (data-testid=delete-email-<email>) and a single-add form (new-email-name-input + new-email-email-input + add-single-email-button). Export uses window.open with ?token=<jwt> in URL; Playwright must use page.expect_download() (not popup capture) since the new tab immediately consumes the streaming xlsx response. Backend export endpoint accepts token via query param or Authorization header.",
+  "rca_of_the_issue": "Previous iteration's blob-download approach failed inside the Emergent preview iframe which sandboxes/blocks programmatic blob: URL downloads. Fix in iteration 3: (a) backend GET /api/admin/export now accepts ?token=<jwt> query param (in addition to Authorization header) so a plain GET URL is fully authenticated; (b) frontend ExportTab calls window.open(`${API}/api/admin/export?token=${token}`, '_blank') with a top-level fallback. The browser receives an HTTP 200 with Content-Disposition: attachment, triggering a native download. Verified: Playwright page.expect_download() captured a real download of 'bottin_scolaire.xlsx'."
+}
