@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional, Annotated, Any
 import uuid
 import io
+import csv
+import re
 import jwt
 import bcrypt
 import requests
@@ -344,9 +346,44 @@ async def add_allowed_emails(data: AllowedEmailsInput, admin: dict = Depends(req
         existing = await db.allowed_emails.find_one({"email": email})
         if existing:
             continue
-        await db.allowed_emails.insert_one({"email": email, "created_at": datetime.now(timezone.utc).isoformat()})
+        await db.allowed_emails.insert_one({"email": email, "name": "", "created_at": datetime.now(timezone.utc).isoformat()})
         added += 1
     return {"added": added}
+
+
+@api_router.post("/admin/allowed-emails/csv")
+async def import_allowed_emails_csv(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+    raw = (await file.read())
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("latin-1")
+    added = 0
+    skipped = 0
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        cells = [c.strip().strip('"').strip() for c in re.split(r"[,;\t]", line) if c.strip()]
+        email = ""
+        name_parts = []
+        for c in cells:
+            if not email and re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", c):
+                email = c.lower()
+            else:
+                name_parts.append(c)
+        name = " ".join(name_parts).strip()
+        if not email:
+            skipped += 1
+            continue
+        existing = await db.allowed_emails.find_one({"email": email})
+        if existing:
+            if name and not existing.get("name"):
+                await db.allowed_emails.update_one({"email": email}, {"$set": {"name": name}})
+            skipped += 1
+            continue
+        await db.allowed_emails.insert_one({"email": email, "name": name, "created_at": datetime.now(timezone.utc).isoformat()})
+        added += 1
+    return {"added": added, "skipped": skipped}
 
 
 @api_router.delete("/admin/allowed-emails")

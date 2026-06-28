@@ -152,6 +152,7 @@ function EmailsTab() {
   const [emails, setEmails] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -172,6 +173,20 @@ function EmailsTab() {
     } catch (err) { toast.error(formatApiErrorDetail(err.response?.data?.detail)); }
   };
 
+  const importCsv = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      const { data } = await api.post("/admin/allowed-emails/csv", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success(`${data.added} ajouté(s), ${data.skipped} ignoré(s)`);
+      load();
+    } catch (err) { toast.error(formatApiErrorDetail(err.response?.data?.detail)); }
+    finally { setImporting(false); e.target.value = ""; }
+  };
+
   const remove = async (email) => {
     await api.delete(`/admin/allowed-emails/${encodeURIComponent(email)}`);
     load();
@@ -188,6 +203,16 @@ function EmailsTab() {
     <Panel>
       <h2 className="text-2xl font-bold text-slate-800 mb-2">Courriels autorisés</h2>
       <p className="text-sm text-slate-500 font-medium mb-5">Seuls ces courriels peuvent se connecter. Mot de passe par défaut = le courriel.</p>
+
+      <div className="bg-sky-50 border border-sky-100 rounded-2xl p-4 mb-5">
+        <p className="text-sm font-bold text-slate-700 mb-1">Importer un fichier CSV</p>
+        <p className="text-xs text-slate-500 font-medium mb-3">Deux colonnes : <span className="font-semibold">nom complet</span>, <span className="font-semibold">courriel</span>. Séparateur virgule ou point-virgule. Une ligne d'en-tête est ignorée automatiquement.</p>
+        <label className="inline-flex items-center gap-2 bg-white border-2 border-slate-200 text-slate-700 font-bold rounded-full px-5 py-2.5 cursor-pointer hover:border-primary transition-colors">
+          <input data-testid="emails-csv-input" type="file" accept=".csv,text/csv" onChange={importCsv} className="hidden" />
+          {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Choisir un fichier CSV
+        </label>
+      </div>
+
       <textarea
         data-testid="emails-input"
         value={input}
@@ -207,7 +232,7 @@ function EmailsTab() {
         <div className="flex flex-wrap gap-2">
           {emails.map((e) => (
             <span key={e.id} data-testid={`email-chip-${e.email}`} className="inline-flex items-center gap-2 bg-slate-100 rounded-full pl-4 pr-2 py-1.5 text-sm font-semibold text-slate-700">
-              {e.email}
+              {e.name ? <span>{e.name} <span className="text-slate-400 font-medium">· {e.email}</span></span> : e.email}
               <button onClick={() => remove(e.email)} className="w-5 h-5 rounded-full hover:bg-red-100 hover:text-red-500 flex items-center justify-center"><X className="w-3.5 h-3.5" /></button>
             </span>
           ))}
