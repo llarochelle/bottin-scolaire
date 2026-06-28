@@ -264,30 +264,64 @@ function UsersTab() {
     } catch (err) { toast.error(formatApiErrorDetail(err.response?.data?.detail)); }
   };
 
+  const removeUser = async (id, email) => {
+    if (!window.confirm(`Retirer l'utilisateur ${email} ? Son compte sera supprimé (il pourra se reconnecter si son courriel reste autorisé).`)) return;
+    try {
+      await api.delete(`/admin/users/${id}`);
+      toast.success("Utilisateur retiré");
+      load();
+    } catch (err) { toast.error(formatApiErrorDetail(err.response?.data?.detail)); }
+  };
+
+  const purge = async () => {
+    if (!window.confirm("Purger TOUS les utilisateurs (sauf vous et l'administrateur principal) ? Cette action est irréversible.")) return;
+    try {
+      const { data } = await api.delete("/admin/users");
+      toast.success(`${data.deleted} utilisateur(s) supprimé(s)`);
+      load();
+    } catch (err) { toast.error(formatApiErrorDetail(err.response?.data?.detail)); }
+  };
+
   return (
     <Panel>
-      <h2 className="text-2xl font-bold text-slate-800 mb-5">Utilisateurs</h2>
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-2xl font-bold text-slate-800">Utilisateurs</h2>
+        <button data-testid="purge-users-button" onClick={purge} className="bg-red-50 text-red-600 font-bold rounded-full px-4 py-2.5 hover:bg-red-100 flex items-center gap-2">
+          <Trash className="w-4 h-4" /> Tout purger
+        </button>
+      </div>
       {loading ? <Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" /> : (
         <div className="space-y-3">
-          {users.map((u) => (
-            <div key={u.id} data-testid={`user-row-${u.email}`} className="flex items-center justify-between bg-slate-50 rounded-2xl px-5 py-4 gap-3">
-              <div className="min-w-0">
-                <p className="font-bold text-slate-800 truncate">{u.email}</p>
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${u.role === "admin" ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700"}`}>
-                  {u.role === "admin" ? "Administrateur" : "Parent"}
-                </span>
+          {users.map((u) => {
+            const isMainAdmin = u.email === "admin@bottin.ca";
+            const isSelf = me?.id === u.id;
+            return (
+              <div key={u.id} data-testid={`user-row-${u.email}`} className="flex items-center justify-between bg-slate-50 rounded-2xl px-5 py-4 gap-3">
+                <div className="min-w-0">
+                  <p className="font-bold text-slate-800 truncate">{u.email}</p>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${u.role === "admin" ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700"}`}>
+                    {u.role === "admin" ? "Administrateur" : "Parent"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {u.role === "admin" ? (
+                    <button data-testid={`demote-${u.email}`} onClick={() => setRole(u.id, "parent")} className="bg-white border border-slate-200 text-slate-600 font-bold rounded-full px-4 py-2 hover:bg-slate-100 flex items-center gap-2">
+                      <ShieldOff className="w-4 h-4" /> <span className="hidden sm:inline">Rétrograder</span>
+                    </button>
+                  ) : (
+                    <button data-testid={`promote-${u.email}`} onClick={() => setRole(u.id, "admin")} className="bg-amber-400 text-white font-bold rounded-full px-4 py-2 hover:bg-amber-500 flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4" /> <span className="hidden sm:inline">Promouvoir</span>
+                    </button>
+                  )}
+                  {!isMainAdmin && !isSelf && (
+                    <button data-testid={`delete-user-${u.email}`} onClick={() => removeUser(u.id, u.email)} title="Retirer l'utilisateur" className="w-9 h-9 rounded-full text-slate-400 hover:bg-red-50 hover:text-red-500 flex items-center justify-center">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
-              {u.role === "admin" ? (
-                <button data-testid={`demote-${u.email}`} onClick={() => setRole(u.id, "parent")} className="bg-white border border-slate-200 text-slate-600 font-bold rounded-full px-4 py-2 hover:bg-slate-100 flex items-center gap-2 shrink-0">
-                  <ShieldOff className="w-4 h-4" /> Rétrograder
-                </button>
-              ) : (
-                <button data-testid={`promote-${u.email}`} onClick={() => setRole(u.id, "admin")} className="bg-amber-400 text-white font-bold rounded-full px-4 py-2 hover:bg-amber-500 flex items-center gap-2 shrink-0">
-                  <ShieldCheck className="w-4 h-4" /> Promouvoir
-                </button>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </Panel>

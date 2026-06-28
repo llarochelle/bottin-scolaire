@@ -429,6 +429,26 @@ async def set_role(user_id: str, data: RoleInput, admin: dict = Depends(require_
     return serialize(doc)
 
 
+@api_router.delete("/admin/users/{user_id}")
+async def delete_user(user_id: str, admin: dict = Depends(require_admin)):
+    target = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not target:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if target["email"] == os.environ.get("ADMIN_EMAIL", "").lower():
+        raise HTTPException(status_code=400, detail="Impossible de supprimer l'administrateur principal")
+    if str(target["_id"]) == admin["_id"]:
+        raise HTTPException(status_code=400, detail="Vous ne pouvez pas supprimer votre propre compte")
+    await db.users.delete_one({"_id": ObjectId(user_id)})
+    return {"message": "Utilisateur supprimé"}
+
+
+@api_router.delete("/admin/users")
+async def purge_users(admin: dict = Depends(require_admin)):
+    main_admin = os.environ.get("ADMIN_EMAIL", "").lower()
+    res = await db.users.delete_many({"email": {"$nin": [main_admin, admin["email"]]}})
+    return {"deleted": res.deleted_count}
+
+
 # ---------------- Cover image ----------------
 @api_router.post("/admin/cover")
 async def upload_cover(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
