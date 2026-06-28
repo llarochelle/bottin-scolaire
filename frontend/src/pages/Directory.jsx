@@ -59,9 +59,9 @@ export default function Directory() {
     <div className="min-h-screen bottin-bg" style={{ backgroundImage: `url(${coverUrl}), linear-gradient(135deg,#e0f2fe,#fef3c7)` }}>
       <NavBar />
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
-        <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 sm:p-8 border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.06)] mb-8 animate-fade-up">
-          <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-slate-800">Bottin des familles</h1>
-          <p className="text-base font-medium text-slate-500 mt-2">
+        <div className="bg-white/65 backdrop-blur-xl rounded-3xl p-5 sm:p-8 border border-white/50 shadow-[0_8px_30px_rgb(0,0,0,0.06)] mb-6 sm:mb-8 animate-fade-up">
+          <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-800">Bottin des familles</h1>
+          <p className="text-sm sm:text-base font-medium text-slate-600 mt-2">
             Retrouvez les coordonnées des familles, classe par classe.
           </p>
 
@@ -114,7 +114,7 @@ export default function Directory() {
 
 function ClassCard({ cls, entries, user, onEdit, onDelete }) {
   return (
-    <div data-testid={`class-card-${cls.id}`} className="bg-white/90 backdrop-blur-xl border border-white/60 rounded-3xl p-6 sm:p-8 shadow-[0_8px_30px_rgb(0,0,0,0.05)] animate-fade-up">
+    <div data-testid={`class-card-${cls.id}`} className="bg-white/72 backdrop-blur-xl border border-white/50 rounded-3xl p-5 sm:p-8 shadow-[0_8px_30px_rgb(0,0,0,0.07)] animate-fade-up">
       <div className="flex items-center gap-3 mb-5">
         <div className="w-11 h-11 rounded-2xl bg-sky-100 text-sky-600 flex items-center justify-center shrink-0">
           <GraduationCap className="w-6 h-6" />
@@ -195,7 +195,7 @@ function EntryRow({ entry, user, onEdit, onDelete }) {
 
 function Empty({ text }) {
   return (
-    <div className="bg-white/85 backdrop-blur-xl rounded-3xl p-12 text-center border border-white/60">
+    <div className="bg-white/70 backdrop-blur-xl rounded-3xl p-12 text-center border border-white/50">
       <p className="text-slate-500 font-semibold">{text}</p>
     </div>
   );

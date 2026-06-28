@@ -17,7 +17,7 @@ export default function NavBar() {
       <Link
         to={to}
         data-testid={testid}
-        className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${
+        className={`px-2.5 sm:px-4 py-2 rounded-full text-[13px] sm:text-sm font-bold transition-colors whitespace-nowrap ${
           active ? "bg-primary text-white" : "text-slate-600 hover:bg-slate-100"
         }`}
       >
@@ -29,31 +29,31 @@ export default function NavBar() {
   return (
     <>
       <header className="sticky top-0 z-40 bg-white/85 backdrop-blur-xl border-b border-white/60">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-1.5 sm:gap-3">
           <Link to="/" className="flex items-center gap-2.5 shrink-0">
             <div className="w-9 h-9 rounded-2xl bg-primary text-white flex items-center justify-center">
               <BookOpen className="w-5 h-5" />
             </div>
-            <span className="font-black text-lg text-slate-800 hidden sm:block">Bottin scolaire</span>
+            <span className="font-black text-lg text-slate-800 hidden md:block">Bottin scolaire</span>
           </Link>
 
-          <nav className="flex items-center gap-1.5">
+          <nav className="flex items-center gap-0.5 sm:gap-1.5 min-w-0">
             {navItem("/", "Bottin", "nav-bottin")}
             {navItem("/mes-inscriptions", "Mes inscriptions", "nav-mes-inscriptions")}
             {user?.role === "admin" && (
               <Link
                 to="/admin"
                 data-testid="nav-admin"
-                className={`px-4 py-2 rounded-full text-sm font-bold transition-colors flex items-center gap-1.5 ${
+                className={`px-2.5 sm:px-4 py-2 rounded-full text-[13px] sm:text-sm font-bold transition-colors flex items-center gap-1.5 whitespace-nowrap ${
                   location.pathname === "/admin" ? "bg-secondary text-white" : "text-slate-600 hover:bg-slate-100"
                 }`}
               >
-                <Settings className="w-4 h-4" /> Admin
+                <Settings className="w-4 h-4" /> <span className="hidden sm:inline">Admin</span>
               </Link>
             )}
           </nav>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1 shrink-0">
             <button
               data-testid="open-change-password"
               onClick={() => setShowPwd(true)}

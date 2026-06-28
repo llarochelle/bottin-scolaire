@@ -45,8 +45,8 @@ export default function MyEntries() {
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
         <div className="flex items-center justify-between gap-4 mb-8 animate-fade-up">
           <div>
-            <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-slate-800">Mes inscriptions</h1>
-            <p className="text-base font-medium text-slate-500 mt-2">Inscrivez vos enfants dans leur classe.</p>
+            <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-800">Mes inscriptions</h1>
+            <p className="text-sm sm:text-base font-medium text-slate-500 mt-2">Inscrivez vos enfants dans leur classe.</p>
           </div>
           <button
             data-testid="add-entry-button"

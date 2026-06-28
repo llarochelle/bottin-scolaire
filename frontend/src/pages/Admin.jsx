@@ -22,8 +22,8 @@ export default function Admin() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-sky-50">
       <NavBar />
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
-        <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-slate-800 animate-fade-up">Administration</h1>
-        <p className="text-base font-medium text-slate-500 mt-2 mb-8">Gérez le bottin scolaire pour cette année.</p>
+        <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-800 animate-fade-up">Administration</h1>
+        <p className="text-sm sm:text-base font-medium text-slate-500 mt-2 mb-8">Gérez le bottin scolaire pour cette année.</p>
 
         <div className="flex gap-2 flex-wrap mb-8">
           {TABS.map((t) => (
