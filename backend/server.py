@@ -195,6 +195,7 @@ async def login(data: LoginInput):
             "name": allowed.get("name", ""),
             "role": "parent",
             "password_changed": False,
+            "pw_prompted": False,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         res = await db.users.insert_one(new_user)
@@ -220,9 +221,18 @@ async def change_password(data: ChangePasswordInput, user: dict = Depends(get_cu
         raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au moins 4 caractères")
     await db.users.update_one(
         {"_id": ObjectId(user["_id"])},
-        {"$set": {"password_hash": hash_password(data.new_password), "password_changed": True}},
+        {"$set": {"password_hash": hash_password(data.new_password), "password_changed": True, "pw_prompted": True}},
     )
     return {"message": "Mot de passe mis à jour"}
+
+
+@api_router.post("/auth/dismiss-password-prompt")
+async def dismiss_password_prompt(user: dict = Depends(get_current_user)):
+    await db.users.update_one(
+        {"_id": ObjectId(user["_id"])},
+        {"$set": {"pw_prompted": True}},
+    )
+    return {"message": "ok"}
 
 
 # ---------------- Classes ----------------

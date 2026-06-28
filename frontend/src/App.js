@@ -7,6 +7,7 @@ import Login from "./pages/Login";
 import Directory from "./pages/Directory";
 import MyEntries from "./pages/MyEntries";
 import Admin from "./pages/Admin";
+import FirstLoginPasswordDialog from "./components/FirstLoginPasswordDialog";
 
 function Protected({ children, adminOnly }) {
   const { user, loading } = useAuth();
@@ -41,6 +42,7 @@ function App() {
       <AuthProvider>
         <BrowserRouter>
           <AppRoutes />
+          <FirstLoginPasswordDialog />
           <Toaster position="top-center" richColors />
         </BrowserRouter>
       </AuthProvider>
