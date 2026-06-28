@@ -1,0 +1,128 @@
+{
+  "project_name": "Bottin Scolaire Web App",
+  "domain": "School Community / Parent Directory",
+  "design_vision": {
+    "theme": "light",
+    "archetype": "ARCHETYPE 6 (Vibrant Play) mixed with ARCHETYPE 1 (Organic & Earthy)",
+    "mood": "Warm, friendly, trustworthy, family-oriented, and playful but highly organized.",
+    "core_concept": "A digital school directory that retains the charm of a paper version (featuring a real children's drawing as the background) while offering fast filtering, robust search, and easy admin management."
+  },
+  "typography": {
+    "font_family": {
+      "headings": "'Nunito', sans-serif",
+      "body": "'Nunito', sans-serif"
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl font-black tracking-tight text-slate-800",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight text-slate-800",
+      "h3": "text-xl font-bold text-slate-800",
+      "body": "text-base font-medium text-slate-600",
+      "small_labels": "text-xs font-bold uppercase tracking-[0.1em] text-slate-500"
+    },
+    "notes": "We use Nunito globally for its rounded, friendly, and approachable letterforms which fit perfectly with a primary school context."
+  },
+  "color_palette": {
+    "primary": {
+      "DEFAULT": "#0ea5e9",
+      "hover": "#0284c7",
+      "light": "#e0f2fe",
+      "description": "Sky blue to convey trust, clarity, and friendliness."
+    },
+    "secondary": {
+      "DEFAULT": "#f59e0b",
+      "hover": "#d97706",
+      "light": "#fef3c7",
+      "description": "Warm amber/yellow for playful accents and primary action highlights."
+    },
+    "neutrals": {
+      "background_fallback": "#f8fafc",
+      "card_surface": "rgba(255, 255, 255, 0.90)",
+      "text_main": "#0f172a",
+      "text_muted": "#475569",
+      "border": "#e2e8f0"
+    },
+    "semantic": {
+      "success": "#10b981",
+      "danger": "#ef4444",
+      "warning": "#f59e0b"
+    }
+  },
+  "layout_and_spacing": {
+    "global_container": "max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12",
+    "border_radius": {
+      "cards": "rounded-3xl",
+      "buttons_inputs": "rounded-full",
+      "small_elements": "rounded-xl"
+    },
+    "shadows": {
+      "soft": "shadow-[0_8px_30px_rgb(0,0,0,0.04)]",
+      "hover": "shadow-[0_20px_40px_rgb(0,0,0,0.08)]"
+    },
+    "grid_system": {
+      "classes_grid": "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8"
+    }
+  },
+  "surface_strategy": {
+    "background": "The app features a global background image (children's drawing). To ensure text legibility, the main wrapper must use a fixed background with `bg-cover bg-center bg-no-repeat bg-fixed`.",
+    "glassmorphism_cards": "All readable content blocks (directory cards, login panel, admin tables) MUST use high-opacity glassmorphism to contrast against the playful drawing background. Tailwind classes: `bg-white/90 backdrop-blur-xl border border-white/50 shadow-soft`."
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-primary text-white font-bold rounded-full px-6 py-3 hover:bg-primary-hover transition-colors shadow-sm",
+      "secondary": "bg-secondary text-white font-bold rounded-full px-6 py-3 hover:bg-secondary-hover transition-colors shadow-sm",
+      "ghost": "bg-transparent text-slate-600 font-bold rounded-full px-4 py-2 hover:bg-slate-100 transition-colors"
+    },
+    "inputs_and_filters": {
+      "text_input": "w-full bg-white border-2 border-slate-200 rounded-full px-6 py-3 text-slate-800 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/20 transition-all font-medium",
+      "dropdown": "w-full bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 text-slate-800 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/20"
+    },
+    "cards": {
+      "class_card": "flex flex-col bg-white/90 backdrop-blur-xl border border-white/50 rounded-3xl p-6 sm:p-8 shadow-soft hover:shadow-hover transition-shadow",
+      "student_row": "flex flex-col sm:flex-row justify-between items-start sm:items-center py-4 border-b border-slate-200/60 last:border-0 gap-2"
+    },
+    "badges": {
+      "primary_contact": "inline-flex items-center bg-primary-light text-primary-hover text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider"
+    }
+  },
+  "media_and_assets": {
+    "images": [
+      {
+        "category": "global_background",
+        "description": "A colorful children's drawing to serve as the authentic 'Bottin scolaire' cover background. Admin can change this later.",
+        "url": "https://images.unsplash.com/photo-1560421683-6856ea585c78?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NDh8MHwxfHNlYXJjaHwxfHxjaGlsZHJlbiUyMGRyYXdpbmclMjBjb2xvcmZ1bCUyMGFydHxlbnwwfHx8fDE3ODI2MTA5OTh8MA&ixlib=rb-4.1.0&q=85"
+      }
+    ],
+    "icons": {
+      "library": "lucide-react",
+      "usage": "Use rounded, friendly icons. Examples: `Search`, `Users`, `Phone`, `Mail`, `Star` (for primary contact), `Settings` (for admin)."
+    }
+  },
+  "motion_and_interactions": {
+    "hover_states": "Cards lift slightly (`-translate-y-1`) with an expanded shadow. Buttons subtly scale down on click (`active:scale-95`).",
+    "page_transitions": "Smooth fade-in for directory lists to avoid jarring flashes when switching class filters."
+  },
+  "language_and_copy": {
+    "locale": "fr-CA",
+    "terminology": {
+      "directory": "Bottin scolaire",
+      "class": "Groupe / Classe",
+      "teacher": "Enseignant(e)",
+      "student": "Élève",
+      "parents": "Parents",
+      "primary_contact": "Appeler en premier",
+      "login": "Se connecter",
+      "email": "Courriel",
+      "password": "Mot de passe"
+    }
+  },
+  "accessibility_and_testing": {
+    "contrast": "Ensure minimum 4.5:1 contrast ratio. Because the background is a complex image, the frosted white layer (`bg-white/90`) is mandatory behind any text.",
+    "testing_attributes": "All interactive elements MUST include `data-testid` (e.g., `data-testid=\"login-submit-button\"`, `data-testid=\"class-filter-dropdown\"`, `data-testid=\"search-child-input\"`)."
+  },
+  "instructions_to_main_agent": [
+    "1. Setup the global layout to use the provided Unsplash image as a fixed CSS background on the body or main wrapper.",
+    "2. Ensure Shadcn components (like Select, Dialog, Input) are heavily customized to use rounded corners (`rounded-2xl` or `rounded-full`) to match the kid-friendly aesthetic.",
+    "3. Build the 'Class Card' as a heavily padded, frosted glass container that lists the children inside that group.",
+    "4. For the Admin panel, use a cleaner, more standard dashboard approach (still maintaining the soft rounded corners and Nunito font) but perhaps with a solid white background for maximum data density and clarity when managing emails and Excel exports."
+  ]
+}
