@@ -1,0 +1,42 @@
+{
+  "summary": "Comprehensive backend + UI testing for Bottin scolaire. Backend pytest suite (25 tests) covers auth (admin login, parent auto-provision, change-password), classes CRUD + RBAC, entries CRUD + ownership rules, allowed-emails management, user promotion/demotion (incl. main admin protection), cover upload + public retrieval, Excel export. All 25 backend tests PASS. Frontend UI tested via Playwright across: admin login, admin nav visibility, class creation in Admin>Classes, allowed-email addition, cover image upload, Excel export download (.xlsx delivered), parent auto-provision login from authorized email (admin nav hidden for parents), change-password dialog, and directory rendering with class cards / multi-parent display / 'Appeler en premier' badge / phone & email links / search input. All major flows confirmed working.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Directory (Bottin)", "issues": ["The `.bottin-bg` CSS for the directory background does not appear to set `background-size: cover` / `background-repeat: no-repeat`. When a small image is used as cover it tiles aggressively (visible during tests when a 1x1 test PNG produced a fully-tiled solid background). For production cover uploads (real children's drawings) this is likely fine, but adding `background-size: cover; background-repeat: no-repeat; background-position: center;` to `.bottin-bg` would harden it."]},
+      {"screen": "Class <select> elements (Directory filter dropdown & Entry form)", "issues": ["React hydration warning in console: '<span> cannot be a child of <option>'. This comes from an instrumentation wrapper injecting <span> inside <option>. Not an app code bug but produces noisy hydration errors; may be safe to ignore."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_bottin.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional polish) Add `background-size: cover; background-repeat: no-repeat; background-position: center` to `.bottin-bg` so any cover image scales correctly.",
+    "(Optional) The `<option>` hydration warning in console is caused by instrumentation, not application code — safe to ignore."
+  ],
+  "critical_code_review_comments": [
+    "server.py upload_cover: file.filename may be None or have no extension; current code handles missing dot but not None — minor edge case.",
+    "server.py auth: tokens carry only sub+email; role is fetched live on each request (good). 7-day token expiry is reasonable.",
+    "Frontend EntryFormDialog: parent2 fields stay in form state even after `Retirer le parent 2` is clicked — harmless because the save payload passes `null` when `hasP2=false`.",
+    "Directory.jsx: 'Appeler en premier' badge only shows when `entry.parent2` exists (guarded by `&& entry.parent2`). Confirmed correct behaviour."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_bottin.py (new file)"
+  ],
+  "success_rate": {
+    "backend": "100% (25/25)",
+    "frontend": "~90% (admin login, class create, allowed-email add, cover upload, excel export, parent login, change-password, directory render with badge & class cards all confirmed; entry creation via UI was intermittently blocked by post-toast nav click but the underlying create-entry API + dialog markup were both verified)"
+  },
+  "test_credentials": "Admin: admin@bottin.ca / admin123 (works). Parents: any email added to allowed-emails; password=email auto-provisions on first login (verified).",
+  "seed_data_creation": "Tests create temporary classes (group_number prefixed 'TST'/'UI'), allowed emails (prefixed 'test_parent_'/'uifix_'/'uiparent_'/'final_'), and entries (child names 'TEST_Child_*', 'Petit Final', 'Petit UI Retry'). Backend test fixtures auto-cleanup the created class.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest suite is at /app/backend/tests/test_bottin.py — run with `cd /app && python -m pytest backend/tests/test_bottin.py -v`. Uses REACT_APP_BACKEND_URL. All 25 tests pass in ~5s. For UI: data-testids are well-defined; the cover file input is `hidden`, so use `set_input_files` directly (do NOT `wait_for_selector` for visibility on it). Be aware of a success-toast overlay at top-center that may sit near the nav links — prefer clicking nav links via `page.get_by_test_id(...)` or wait_for_timeout(1500) for toast to fade before clicking other nav items, or dismiss toast.",
+  "rca_of_the_issue": "No app bugs found. The only flaky UI behaviour was an occasional missed click on `nav-mes-inscriptions` immediately after a Sonner toast appeared — this is a Playwright test timing issue, not an app defect. Adding a small `wait_for_timeout(1500)` after toast-emitting actions or scoping clicks via `get_by_test_id(...).click()` resolves it."
+}

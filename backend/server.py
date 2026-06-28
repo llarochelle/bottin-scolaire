@@ -1,72 +1,466 @@
-from fastapi import FastAPI, APIRouter
 from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
-import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
-import uuid
-from datetime import datetime, timezone
-
+import os
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, UploadFile, File, Query, Header
+from fastapi.responses import Response, StreamingResponse
+from starlette.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
+import logging
+from pydantic import BaseModel, Field, EmailStr
+from typing import List, Optional, Annotated, Any
+import uuid
+import io
+import jwt
+import bcrypt
+import requests
+from datetime import datetime, timezone, timedelta
+from bson import ObjectId
+from pydantic import BeforeValidator
+from openpyxl import Workbook
+
+# ---------------- DB ----------------
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
-app = FastAPI()
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-# Create a router with the /api prefix
+app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
+# ---------------- Auth helpers ----------------
+JWT_ALGORITHM = "HS256"
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+def get_jwt_secret() -> str:
+    return os.environ["JWT_SECRET"]
 
-# Add your routes to the router instead of directly to app
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
+
+
+def create_access_token(user_id: str, email: str) -> str:
+    payload = {
+        "sub": user_id,
+        "email": email,
+        "exp": datetime.now(timezone.utc) + timedelta(days=7),
+        "type": "access",
+    }
+    return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
+
+
+async def get_current_user(request: Request) -> dict:
+    token = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+    if not token:
+        token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Non authentifié")
+    try:
+        payload = jwt.decode(token, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
+        user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
+        if not user:
+            raise HTTPException(status_code=401, detail="Utilisateur introuvable")
+        user["_id"] = str(user["_id"])
+        user.pop("password_hash", None)
+        return user
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Session expirée")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Jeton invalide")
+
+
+async def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Accès réservé à l'administrateur")
+    return user
+
+
+# ---------------- Object storage ----------------
+STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
+EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
+APP_NAME = "bottin-scolaire"
+storage_key = None
+
+
+def init_storage():
+    global storage_key
+    if storage_key:
+        return storage_key
+    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+    resp.raise_for_status()
+    storage_key = resp.json()["storage_key"]
+    return storage_key
+
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    key = init_storage()
+    resp = requests.put(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key, "Content-Type": content_type},
+        data=data, timeout=120,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_object(path: str):
+    key = init_storage()
+    resp = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
+    resp.raise_for_status()
+    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+
+
+# ---------------- Models ----------------
+PyObjectId = Annotated[str, BeforeValidator(str)]
+
+
+class LoginInput(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class ChangePasswordInput(BaseModel):
+    new_password: str
+
+
+class ClassInput(BaseModel):
+    group_number: str
+    teachers: str
+
+
+class ParentContact(BaseModel):
+    name: str = ""
+    phone: str = ""
+    email: str = ""
+
+
+class EntryInput(BaseModel):
+    class_id: str
+    child_name: str
+    parent1: ParentContact
+    parent2: Optional[ParentContact] = None
+    call_first: str = "parent1"  # "parent1" | "parent2"
+
+
+class AllowedEmailsInput(BaseModel):
+    emails: List[str]
+
+
+class RoleInput(BaseModel):
+    role: str  # "admin" | "parent"
+
+
+def serialize(doc: dict) -> dict:
+    if not doc:
+        return doc
+    doc = dict(doc)
+    doc["id"] = str(doc.pop("_id"))
+    doc.pop("password_hash", None)
+    return doc
+
+
+# ---------------- Auth endpoints ----------------
+@api_router.post("/auth/login")
+async def login(data: LoginInput):
+    email = data.email.lower().strip()
+    user = await db.users.find_one({"email": email})
+    if not user:
+        # Auto-provision parent if email is authorized and password == email (default)
+        allowed = await db.allowed_emails.find_one({"email": email})
+        if not allowed:
+            raise HTTPException(status_code=401, detail="Courriel non autorisé ou identifiants invalides")
+        if data.password.lower().strip() != email:
+            raise HTTPException(status_code=401, detail="Mot de passe invalide. Par défaut, votre mot de passe est votre courriel.")
+        new_user = {
+            "email": email,
+            "password_hash": hash_password(data.password),
+            "name": allowed.get("name", ""),
+            "role": "parent",
+            "password_changed": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        res = await db.users.insert_one(new_user)
+        new_user["_id"] = res.inserted_id
+        user = new_user
+    else:
+        if not verify_password(data.password, user["password_hash"]):
+            raise HTTPException(status_code=401, detail="Identifiants invalides")
+
+    token = create_access_token(str(user["_id"]), email)
+    return {"token": token, "user": serialize(user)}
+
+
+@api_router.get("/auth/me")
+async def me(user: dict = Depends(get_current_user)):
+    user["id"] = user.pop("_id")
+    return user
+
+
+@api_router.post("/auth/change-password")
+async def change_password(data: ChangePasswordInput, user: dict = Depends(get_current_user)):
+    if len(data.new_password) < 4:
+        raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au moins 4 caractères")
+    await db.users.update_one(
+        {"_id": ObjectId(user["_id"])},
+        {"$set": {"password_hash": hash_password(data.new_password), "password_changed": True}},
+    )
+    return {"message": "Mot de passe mis à jour"}
+
+
+# ---------------- Classes ----------------
+@api_router.get("/classes")
+async def list_classes(user: dict = Depends(get_current_user)):
+    classes = await db.classes.find().sort("group_number", 1).to_list(1000)
+    return [serialize(c) for c in classes]
+
+
+@api_router.post("/classes")
+async def create_class(data: ClassInput, admin: dict = Depends(require_admin)):
+    doc = {
+        "group_number": data.group_number.strip(),
+        "teachers": data.teachers.strip(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    res = await db.classes.insert_one(doc)
+    doc["_id"] = res.inserted_id
+    return serialize(doc)
+
+
+@api_router.put("/classes/{class_id}")
+async def update_class(class_id: str, data: ClassInput, admin: dict = Depends(require_admin)):
+    await db.classes.update_one(
+        {"_id": ObjectId(class_id)},
+        {"$set": {"group_number": data.group_number.strip(), "teachers": data.teachers.strip()}},
+    )
+    doc = await db.classes.find_one({"_id": ObjectId(class_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Classe introuvable")
+    return serialize(doc)
+
+
+@api_router.delete("/classes/{class_id}")
+async def delete_class(class_id: str, admin: dict = Depends(require_admin)):
+    await db.classes.delete_one({"_id": ObjectId(class_id)})
+    await db.entries.delete_many({"class_id": class_id})
+    return {"message": "Classe supprimée"}
+
+
+# ---------------- Entries ----------------
+@api_router.get("/entries")
+async def list_entries(user: dict = Depends(get_current_user), class_id: Optional[str] = None, search: Optional[str] = None):
+    query: dict = {}
+    if class_id:
+        query["class_id"] = class_id
+    if search:
+        query["child_name"] = {"$regex": search.strip(), "$options": "i"}
+    entries = await db.entries.find(query).sort("child_name", 1).to_list(5000)
+    return [serialize(e) for e in entries]
+
+
+@api_router.get("/entries/mine")
+async def my_entries(user: dict = Depends(get_current_user)):
+    entries = await db.entries.find({"owner_email": user["email"]}).sort("child_name", 1).to_list(1000)
+    return [serialize(e) for e in entries]
+
+
+@api_router.post("/entries")
+async def create_entry(data: EntryInput, user: dict = Depends(get_current_user)):
+    doc = {
+        "class_id": data.class_id,
+        "child_name": data.child_name.strip(),
+        "parent1": data.parent1.model_dump(),
+        "parent2": data.parent2.model_dump() if data.parent2 else None,
+        "call_first": data.call_first,
+        "owner_email": user["email"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    res = await db.entries.insert_one(doc)
+    doc["_id"] = res.inserted_id
+    return serialize(doc)
+
+
+@api_router.put("/entries/{entry_id}")
+async def update_entry(entry_id: str, data: EntryInput, user: dict = Depends(get_current_user)):
+    entry = await db.entries.find_one({"_id": ObjectId(entry_id)})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Inscription introuvable")
+    if user.get("role") != "admin" and entry.get("owner_email") != user["email"]:
+        raise HTTPException(status_code=403, detail="Vous ne pouvez modifier que vos propres inscriptions")
+    await db.entries.update_one(
+        {"_id": ObjectId(entry_id)},
+        {"$set": {
+            "class_id": data.class_id,
+            "child_name": data.child_name.strip(),
+            "parent1": data.parent1.model_dump(),
+            "parent2": data.parent2.model_dump() if data.parent2 else None,
+            "call_first": data.call_first,
+        }},
+    )
+    doc = await db.entries.find_one({"_id": ObjectId(entry_id)})
+    return serialize(doc)
+
+
+@api_router.delete("/entries/{entry_id}")
+async def delete_entry(entry_id: str, user: dict = Depends(get_current_user)):
+    entry = await db.entries.find_one({"_id": ObjectId(entry_id)})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Inscription introuvable")
+    if user.get("role") != "admin" and entry.get("owner_email") != user["email"]:
+        raise HTTPException(status_code=403, detail="Action non autorisée")
+    await db.entries.delete_one({"_id": ObjectId(entry_id)})
+    return {"message": "Inscription supprimée"}
+
+
+# ---------------- Admin: allowed emails ----------------
+@api_router.get("/admin/allowed-emails")
+async def get_allowed_emails(admin: dict = Depends(require_admin)):
+    emails = await db.allowed_emails.find().sort("email", 1).to_list(5000)
+    return [serialize(e) for e in emails]
+
+
+@api_router.post("/admin/allowed-emails")
+async def add_allowed_emails(data: AllowedEmailsInput, admin: dict = Depends(require_admin)):
+    added = 0
+    for raw in data.emails:
+        email = raw.lower().strip()
+        if not email or "@" not in email:
+            continue
+        existing = await db.allowed_emails.find_one({"email": email})
+        if existing:
+            continue
+        await db.allowed_emails.insert_one({"email": email, "created_at": datetime.now(timezone.utc).isoformat()})
+        added += 1
+    return {"added": added}
+
+
+@api_router.delete("/admin/allowed-emails")
+async def purge_allowed_emails(admin: dict = Depends(require_admin)):
+    res = await db.allowed_emails.delete_many({})
+    return {"deleted": res.deleted_count}
+
+
+@api_router.delete("/admin/allowed-emails/{email}")
+async def remove_allowed_email(email: str, admin: dict = Depends(require_admin)):
+    await db.allowed_emails.delete_one({"email": email.lower().strip()})
+    return {"message": "Courriel retiré"}
+
+
+# ---------------- Admin: users ----------------
+@api_router.get("/admin/users")
+async def list_users(admin: dict = Depends(require_admin)):
+    users = await db.users.find().sort("email", 1).to_list(5000)
+    return [serialize(u) for u in users]
+
+
+@api_router.put("/admin/users/{user_id}/role")
+async def set_role(user_id: str, data: RoleInput, admin: dict = Depends(require_admin)):
+    if data.role not in ("admin", "parent"):
+        raise HTTPException(status_code=400, detail="Rôle invalide")
+    target = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not target:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if target["email"] == os.environ.get("ADMIN_EMAIL", "").lower() and data.role != "admin":
+        raise HTTPException(status_code=400, detail="Impossible de rétrograder l'administrateur principal")
+    await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"role": data.role}})
+    doc = await db.users.find_one({"_id": ObjectId(user_id)})
+    return serialize(doc)
+
+
+# ---------------- Cover image ----------------
+@api_router.post("/admin/cover")
+async def upload_cover(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else "png"
+    path = f"{APP_NAME}/cover/{uuid.uuid4()}.{ext}"
+    data = await file.read()
+    result = put_object(path, data, file.content_type or "image/png")
+    await db.settings.update_one(
+        {"key": "cover"},
+        {"$set": {
+            "key": "cover",
+            "storage_path": result["path"],
+            "content_type": file.content_type or "image/png",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+    return {"message": "Image de couverture mise à jour"}
+
+
+@api_router.get("/cover")
+async def get_cover():
+    setting = await db.settings.find_one({"key": "cover"})
+    if not setting:
+        raise HTTPException(status_code=404, detail="Aucune image de couverture")
+    data, content_type = get_object(setting["storage_path"])
+    return Response(content=data, media_type=setting.get("content_type", content_type), headers={"Cache-Control": "no-cache"})
+
+
+@api_router.get("/cover/info")
+async def cover_info(user: dict = Depends(get_current_user)):
+    setting = await db.settings.find_one({"key": "cover"})
+    return {"has_cover": setting is not None, "updated_at": setting.get("updated_at") if setting else None}
+
+
+# ---------------- Excel export ----------------
+@api_router.get("/admin/export")
+async def export_excel(admin: dict = Depends(require_admin)):
+    classes = await db.classes.find().sort("group_number", 1).to_list(1000)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Bottin"
+    headers = [
+        "Groupe", "Enseignant(e)", "Élève",
+        "Parent 1 - Nom", "Parent 1 - Téléphone", "Parent 1 - Courriel",
+        "Parent 2 - Nom", "Parent 2 - Téléphone", "Parent 2 - Courriel",
+        "Appeler en premier",
+    ]
+    ws.append(headers)
+    for c in classes:
+        entries = await db.entries.find({"class_id": str(c["_id"])}).sort("child_name", 1).to_list(5000)
+        for e in entries:
+            p1 = e.get("parent1") or {}
+            p2 = e.get("parent2") or {}
+            call_first = "Parent 1" if e.get("call_first") == "parent1" else "Parent 2"
+            ws.append([
+                c.get("group_number", ""), c.get("teachers", ""), e.get("child_name", ""),
+                p1.get("name", ""), p1.get("phone", ""), p1.get("email", ""),
+                p2.get("name", ""), p2.get("phone", ""), p2.get("email", ""),
+                call_first,
+            ])
+    for col in ws.columns:
+        max_len = max((len(str(cell.value)) for cell in col if cell.value), default=10)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=bottin_scolaire.xlsx"},
+    )
+
+
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Bottin scolaire API"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
-
-# Include the router in the main app
 app.include_router(api_router)
 
 app.add_middleware(
@@ -77,12 +471,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+
+@app.on_event("startup")
+async def startup():
+    # seed admin
+    admin_email = os.environ.get("ADMIN_EMAIL", "admin@bottin.ca").lower()
+    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
+    existing = await db.users.find_one({"email": admin_email})
+    if existing is None:
+        await db.users.insert_one({
+            "email": admin_email,
+            "password_hash": hash_password(admin_password),
+            "name": "Administrateur",
+            "role": "admin",
+            "password_changed": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    elif not verify_password(admin_password, existing["password_hash"]):
+        await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password), "role": "admin"}})
+    try:
+        await db.users.create_index("email", unique=True)
+        await db.allowed_emails.create_index("email", unique=True)
+    except Exception as e:
+        logger.warning(f"index: {e}")
+    try:
+        init_storage()
+        logger.info("Storage initialized")
+    except Exception as e:
+        logger.error(f"Storage init failed: {e}")
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
