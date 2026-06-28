@@ -402,12 +402,20 @@ function ExportTab() {
     setLoading(true);
     try {
       const res = await api.get("/admin/export", { responseType: "blob" });
-      const url = URL.createObjectURL(res.data);
+      const blob = new Blob([res.data], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = "bottin_scolaire.xlsx";
+      a.rel = "noopener";
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 1000);
       toast.success("Export téléchargé");
     } catch (err) { toast.error("Échec de l'export"); }
     finally { setLoading(false); }

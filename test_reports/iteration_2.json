@@ -1,0 +1,33 @@
+{
+  "summary": "Bug-fix verification for Excel export download. Backend GET /api/admin/export returns HTTP 200 with content-type application/vnd.openxmlformats-officedocument.spreadsheetml.sheet and Content-Disposition attachment; filename=bottin_scolaire.xlsx (verified via curl with admin Bearer token; 5303 bytes). The xlsx is a valid openpyxl workbook with exactly the expected header row [Groupe, Enseignant(e), Élève, Parent 1 - Nom, Parent 1 - Téléphone, Parent 1 - Courriel, Parent 2 - Nom, Parent 2 - Téléphone, Parent 2 - Courriel, Appeler en premier] and 3 data rows (Jean-Baptiste Dieudonné and 2x Léa Roy rows). Frontend Playwright test: admin login -> nav-admin -> admin-tab-export -> click export-excel-button via page.expect_download() captured a real browser download with suggested_filename 'bottin_scolaire.xlsx' (5304 bytes) and the success toast 'Export téléchargé' was displayed. No error toast appeared. Bug 'l'export excel ne fonctionne pas, je ne vois pas de fichier téléchargé' is RESOLVED.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_bottin.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Admin.jsx ExportTab download(): correctly wraps response in Blob with explicit xlsx mime type, appends <a> to document.body, triggers click, then revokes URL after 1s timeout. This pattern fixes the reported 'no file downloaded' issue (likely caused previously by anchor not being in DOM or URL being revoked too early).",
+    "Suggestion (non-blocking): catch block uses generic 'Échec de l\\'export'; consider surfacing err.response status (e.g., 401/403) for easier debugging if the user happens to be logged out.",
+    "Backend server.py export_excel uses StreamingResponse with BytesIO + openpyxl.save — clean implementation. Content-Disposition header correct."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (export endpoint: 200, correct mime, valid xlsx, expected headers + data rows)",
+    "frontend": "100% (download trigger fired, file received with correct name & non-empty bytes, success toast shown)"
+  },
+  "test_credentials": "Admin admin@bottin.ca / admin123 (confirmed working).",
+  "seed_data_creation": "No new seed data created — used pre-existing class Groupe 101 with entries (Jean-Baptiste Dieudonné, Léa Roy).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Excel export bug is fully resolved. Pattern verified: api.get('/admin/export', {responseType:'blob'}) -> new Blob([data], {type: xlsx mime}) -> a.href = URL.createObjectURL(blob); a.download='bottin_scolaire.xlsx'; document.body.appendChild(a); a.click(); setTimeout(remove + revokeObjectURL, 1000). Use page.expect_download() in Playwright to assert download. Login button label is 'Se connecter' (not 'Connexion').",
+  "rca_of_the_issue": "Reported issue: clicking 'Télécharger le fichier Excel' did not produce a downloaded file. RCA: Earlier frontend implementation likely either (a) did not set Blob mime type / didn't attach the <a> element to document.body before click (some browsers ignore programmatic clicks on detached anchors) or (b) revoked the object URL too quickly before the browser initiated the download. Fix (already applied in /app/frontend/src/pages/Admin.jsx lines 401-422): wrap the axios blob response in a new Blob with the explicit xlsx mime type, append <a> to document.body, click, then revoke URL via setTimeout(..., 1000). Verified end-to-end: backend serves valid xlsx (5303 B) and the browser now triggers a real download (5304 B captured by Playwright with the expected filename and success toast)."
+}
