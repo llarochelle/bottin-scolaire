@@ -12,6 +12,16 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const getSchoolYear = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const startYear = month >= 9 ? year : year - 1;
+    return `${startYear}-${startYear + 1}`;
+  };
+
+  const schoolYear = getSchoolYear();
+
   const submit = async (e) => {
     e.preventDefault();
     setError("");
@@ -30,12 +40,17 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-gradient-to-br from-sky-100 via-white to-amber-50">
       <div className="w-full max-w-md animate-fade-up">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-3xl bg-primary text-white shadow-lg mb-4">
-            <BookOpen className="w-8 h-8" />
-          </div>
-          <h1 className="text-4xl font-black tracking-tight text-slate-800">Bottin scolaire</h1>
+          <img
+            src="/children-school.svg"
+            alt="Enfants courant vers l'école"
+            className="mx-auto mb-6 w-full max-w-md rounded-3xl shadow-2xl"
+          />
+          <h1 className="text-4xl font-black tracking-tight text-slate-800">L'Envol</h1>
           <p className="text-base font-medium text-slate-500 mt-2">
-            Connectez-vous pour accéder au bottin des familles
+            Connectez-vous pour accéder au bottin de l'école L'Envol
+          </p>
+          <p className="text-sm text-slate-400 mt-1">
+            Année scolaire {schoolYear}
           </p>
         </div>
 

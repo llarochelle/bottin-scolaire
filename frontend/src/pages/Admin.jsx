@@ -414,7 +414,7 @@ function CoverTab() {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      await api.post("/admin/cover", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      await api.post("/admin/cover", fd);
       toast.success("Image de couverture mise à jour !");
       setVersion(Date.now());
       setFile(null);

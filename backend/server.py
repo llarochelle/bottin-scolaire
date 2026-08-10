@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from pathlib import Path
+import mimetypes
 import os
 
 ROOT_DIR = Path(__file__).parent
@@ -31,6 +32,9 @@ db = client[os.environ['DB_NAME']]
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+STORAGE_ROOT = Path("/storage")
+STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -94,38 +98,34 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
 
 
 # ---------------- Object storage ----------------
-STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
-EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
 APP_NAME = "bottin-scolaire"
-storage_key = None
-
-
-def init_storage():
-    global storage_key
-    if storage_key:
-        return storage_key
-    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
-    resp.raise_for_status()
-    storage_key = resp.json()["storage_key"]
-    return storage_key
 
 
 def put_object(path: str, data: bytes, content_type: str) -> dict:
-    key = init_storage()
-    resp = requests.put(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key, "Content-Type": content_type},
-        data=data, timeout=120,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    file_path = STORAGE_ROOT / path
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    file_path.write_bytes(data)
+
+    return {
+        "path": path,
+        "storage_path": path,
+    }
 
 
 def get_object(path: str):
-    key = init_storage()
-    resp = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
-    resp.raise_for_status()
-    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+    file_path = STORAGE_ROOT / path
+
+    if not file_path.exists():
+        raise FileNotFoundError(path)
+
+    content_type, _ = mimetypes.guess_type(str(file_path))
+
+    return (
+        file_path.read_bytes(),
+        content_type or "application/octet-stream",
+    )
+
 
 
 # ---------------- Models ----------------
@@ -597,11 +597,8 @@ async def startup():
         await db.allowed_emails.create_index("email", unique=True)
     except Exception as e:
         logger.warning(f"index: {e}")
-    try:
-        init_storage()
-        logger.info("Storage initialized")
-    except Exception as e:
-        logger.error(f"Storage init failed: {e}")
+
+    logger.info("Local Storage initialized")
 
 
 @app.on_event("shutdown")

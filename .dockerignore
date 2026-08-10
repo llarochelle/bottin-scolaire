@@ -1,0 +1,11 @@
+.env
+.git
+.gitignore
+.vscode
+node_modules
+frontend/node_modules
+backend/__pycache__
+backend/*.py[cod]
+backend/.pytest_cache
+frontend/build
+frontend/.env

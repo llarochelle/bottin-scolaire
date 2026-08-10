@@ -1,0 +1,39 @@
+services:
+  mongodb:
+    image: mongo:8
+    container_name: bottin-mongodb
+    restart: unless-stopped
+    volumes:
+      - mongodb_data:/data/db
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bottin-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MONGO_URL: ${MONGO_URL:-mongodb://mongodb:27017}
+      DB_NAME: ${DB_NAME:-bottin}
+      JWT_SECRET: ${JWT_SECRET:-changeme}
+    depends_on:
+      - mongodb
+    volumes:
+      - storage:/storage
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    container_name: bottin-frontend
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    depends_on:
+      - backend
+
+volumes:
+  mongodb_data:
+  storage:

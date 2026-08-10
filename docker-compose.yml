@@ -1,0 +1,36 @@
+services:
+  mongodb:
+    image: mongo:8
+    container_name: bottin-mongodb
+    restart: unless-stopped
+
+    volumes:
+      - mongodb_data:/data/db
+
+  backend:
+    build:
+      context: ./backend
+
+    container_name: bottin-backend
+
+    env_file:
+      - .env
+
+    depends_on:
+      - mongodb
+
+
+  frontend:
+    build:
+      context: ./frontend
+
+    container_name: bottin-frontend
+
+    ports:
+      - "3001:3000"
+
+    depends_on:
+      - backend
+
+volumes:
+  mongodb_data:

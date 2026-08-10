@@ -4,7 +4,7 @@
 Application web de bottin (annuaire) scolaire. Chaque année, les parents s'inscrivent à un bottin organisé par classe (# de groupe + nom des enseignant(e)s). Les parents inscrivent leur enfant dans la bonne classe avec nom complet, téléphone, courriel, et l'option d'indiquer quel parent appeler en premier. L'admin gère les classes, la liste des courriels autorisés (ajout/retrait/purge), promotion/rétrogradation d'utilisateurs, et l'image de couverture (dessin d'enfants) utilisée en arrière-plan. Connexion parent : courriel + mot de passe par défaut = courriel (changement optionnel). Export Excel des données brutes.
 
 ## Architecture
-- Backend FastAPI (`/app/backend/server.py`), MongoDB (motor). Auth JWT Bearer (token localStorage `bottin_token`). Object storage Emergent pour l'image de couverture. Export via openpyxl.
+- Backend FastAPI (`/app/backend/server.py`), MongoDB (motor). Auth JWT Bearer (token localStorage `bottin_token`). Object storage local pour l'image de couverture. Export via openpyxl.
 - Frontend React + Tailwind + shadcn, police Nunito, thème clair « Vibrant Play ». Pages : Login, Directory (Bottin), MyEntries, Admin.
 
 ## Personas

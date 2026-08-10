@@ -15,7 +15,7 @@
   ],
   "action_items": [],
   "critical_code_review_comments": [
-    "Admin.jsx ExportTab.download() correctly uses window.open(url,'_blank') with the JWT as ?token=<...> query param; falls back to window.location.assign(url) if the popup is blocked. This is the right approach for the sandboxed Emergent preview iframe.",
+    "Admin.jsx ExportTab.download() correctly uses window.open(url,'_blank') with the JWT as ?token=<...> query param; falls back to window.location.assign(url) if the popup is blocked. This is the right approach for the sandboxed preview iframe.",
     "Backend GET /api/admin/export accepts the JWT via either ?token=<...> query param OR Authorization: Bearer header. Returns 401 on bad/missing token and 403 on non-admin token — verified via pytest.",
     "POST /api/admin/allowed-emails/single validates email with '@' AND '.' check (manual regex), and updates the name in-place if the email already exists with a non-empty name. Returns 400 on invalid emails. Solid.",
     "EmailsTab list rendering uses data-testid email-row-<email> and delete-email-<email> — correct, matches the testing spec. Each row shows name (or 'Sans nom' fallback) and email.",
@@ -34,5 +34,5 @@
   "retest_needed": false,
   "main_agent_can_self_test": true,
   "context_for_next_testing_agent": "Iteration 3 changes verified working end-to-end. EmailsTab now uses a vertical list (data-testid=email-row-<email>) with delete buttons (data-testid=delete-email-<email>) and a single-add form (new-email-name-input + new-email-email-input + add-single-email-button). Export uses window.open with ?token=<jwt> in URL; Playwright must use page.expect_download() (not popup capture) since the new tab immediately consumes the streaming xlsx response. Backend export endpoint accepts token via query param or Authorization header.",
-  "rca_of_the_issue": "Previous iteration's blob-download approach failed inside the Emergent preview iframe which sandboxes/blocks programmatic blob: URL downloads. Fix in iteration 3: (a) backend GET /api/admin/export now accepts ?token=<jwt> query param (in addition to Authorization header) so a plain GET URL is fully authenticated; (b) frontend ExportTab calls window.open(`${API}/api/admin/export?token=${token}`, '_blank') with a top-level fallback. The browser receives an HTTP 200 with Content-Disposition: attachment, triggering a native download. Verified: Playwright page.expect_download() captured a real download of 'bottin_scolaire.xlsx'."
+  "rca_of_the_issue": "Previous iteration's blob-download approach failed inside the preview iframe which sandboxes/blocks programmatic blob: URL downloads. Fix in iteration 3: (a) backend GET /api/admin/export now accepts ?token=<jwt> query param (in addition to Authorization header) so a plain GET URL is fully authenticated; (b) frontend ExportTab calls window.open(`${API}/api/admin/export?token=${token}`, '_blank') with a top-level fallback. The browser receives an HTTP 200 with Content-Disposition: attachment, triggering a native download. Verified: Playwright page.expect_download() captured a real download of 'bottin_scolaire.xlsx'."
 }
