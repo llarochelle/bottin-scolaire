@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: bottin-scolaire
+spec:
+  selector:
+    matchLabels:
+      app: backend
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: bottin-backend:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MONGO_URL
+              value: mongodb://mongodb:27017
+            - name: DB_NAME
+              value: bottin
+            - name: JWT_SECRET
+              value: changeme
+            - name: ADMIN_EMAIL
+              value: admin@test.ca
+            - name: ADMIN_PASSWORD
+              value: admin123
+            - name: CORS_ORIGINS
+              value: http://localhost:30001
+          volumeMounts:
+            - name: storage
+              mountPath: /storage
+      volumes:
+        - name: storage
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: bottin-scolaire
+spec:
+  selector:
+    app: backend
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
