@@ -498,6 +498,16 @@ async def import_bottin_csv(file: UploadFile = File(...), admin: dict = Depends(
     return {"imported": imported, "updated": updated, "errors": errors}
 
 
+@api_router.delete("/admin/entries")
+async def purge_entries(class_id: Optional[str] = None, admin: dict = Depends(require_admin)):
+    """Purge directory entries. If `class_id` is provided, only purge entries for that class."""
+    query: dict = {}
+    if class_id:
+        query["class_id"] = class_id
+    res = await db.entries.delete_many(query)
+    return {"deleted": res.deleted_count}
+
+
 @api_router.delete("/admin/allowed-emails")
 async def purge_allowed_emails(admin: dict = Depends(require_admin)):
     res = await db.allowed_emails.delete_many({})

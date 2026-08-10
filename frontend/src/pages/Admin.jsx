@@ -505,6 +505,7 @@ function CoverTab() {
 // ---------------- Export ----------------
 function ExportTab() {
   const [loading, setLoading] = useState(false);
+  const [purging, setPurging] = useState(false);
   const download = async () => {
     setLoading(true);
     try {
@@ -523,13 +524,32 @@ function ExportTab() {
       setLoading(false);
     }
   };
+
+  const purgeEntries = async () => {
+    if (!window.confirm("Purger TOUTES les inscriptions du bottin ? Cette action est irréversible.")) return;
+    setPurging(true);
+    try {
+      const { data } = await api.delete("/admin/entries");
+      toast.success(`${data.deleted || 0} inscription(s) supprimée(s)`);
+    } catch (err) {
+      toast.error(formatApiErrorDetail(err.response?.data?.detail || err.message));
+    } finally {
+      setPurging(false);
+    }
+  };
+
   return (
     <Panel>
       <h2 className="text-2xl font-bold text-slate-800 mb-2">Export Excel</h2>
       <p className="text-sm text-slate-500 font-medium mb-6">Téléchargez toutes les données du bottin (organisées par classe) au format Excel, pour reproduire le bottin papier.</p>
-      <button data-testid="export-excel-button" onClick={download} disabled={loading} className="bg-green-500 text-white font-bold rounded-full px-6 py-3.5 hover:bg-green-600 disabled:opacity-50 flex items-center gap-2">
-        {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />} Télécharger le fichier Excel
-      </button>
+      <div className="flex flex-col sm:flex-row gap-3 items-start">
+        <button data-testid="export-excel-button" onClick={download} disabled={loading} className="bg-green-500 text-white font-bold rounded-full px-6 py-3.5 hover:bg-green-600 disabled:opacity-50 flex items-center gap-2">
+          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />} Télécharger le fichier Excel
+        </button>
+        <button data-testid="purge-entries-button" onClick={purgeEntries} disabled={purging} className="bg-red-50 text-red-600 font-bold rounded-full px-6 py-3.5 hover:bg-red-100 disabled:opacity-50 flex items-center gap-2">
+          {purging ? <Loader2 className="w-5 h-5 animate-spin text-red-600" /> : <Trash className="w-5 h-5" />} Purger le bottin
+        </button>
+      </div>
     </Panel>
   );
 }

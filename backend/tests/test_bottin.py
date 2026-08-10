@@ -371,3 +371,27 @@ class TestImport:
         assert found is not None
         # cleanup
         requests.delete(f"{API}/entries/{found['id']}", headers=admin_headers, timeout=30)
+
+
+class TestPurgeEntries:
+    def test_purge_entries(self, admin_headers, created_class):
+        # Create two entries for the class
+        for i in range(2):
+            payload = {
+                "class_id": created_class["id"],
+                "child_name": f"PURGE_Child_{i}_{uuid.uuid4().hex[:5]}",
+                "parent1": {"name": "X", "phone": "000", "email": "purge_parent@example.com"},
+                "call_first": "parent1",
+            }
+            r = requests.post(f"{API}/entries", json=payload, headers=admin_headers, timeout=30)
+            assert r.status_code == 200, f"create entry for purge: {r.status_code} {r.text}"
+
+        # Purge all entries
+        r = requests.delete(f"{API}/admin/entries", headers=admin_headers, timeout=30)
+        assert r.status_code == 200
+        assert "deleted" in r.json()
+
+        # Verify no entries remain for the created class
+        r2 = requests.get(f"{API}/entries", params={"class_id": created_class['id']}, headers=admin_headers, timeout=30)
+        assert r2.status_code == 200
+        assert all(e.get("class_id") != created_class['id'] for e in r2.json())
