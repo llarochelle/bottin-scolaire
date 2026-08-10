@@ -349,3 +349,25 @@ class TestChangePassword:
         # relogin with new pwd
         r3 = requests.post(f"{API}/auth/login", json={"email": email, "password": new_pwd}, timeout=30)
         assert r3.status_code == 200
+
+
+class TestImport:
+    def test_admin_import_csv(self, admin_headers, created_class):
+        # Prepare a small CSV to import one entry into the created class
+        header = "group_number,child_name,parent1_name,parent1_phone,parent1_email\n"
+        row = f"{created_class['group_number']},Import Child,Parent One,5140000000,parent1@example.com\n"
+        csv_bytes = (header + row).encode("utf-8")
+        files = {"file": ("bottin.csv", io.BytesIO(csv_bytes), "text/csv")}
+        r = requests.post(f"{API}/admin/import", files=files, headers=admin_headers, timeout=60)
+        assert r.status_code == 200, f"import failed: {r.status_code} {r.text}"
+        data = r.json()
+        assert data.get("imported", 0) == 1
+
+        # Verify the entry exists, then clean up
+        r2 = requests.get(f"{API}/entries", params={"class_id": created_class['id']}, headers=admin_headers, timeout=30)
+        assert r2.status_code == 200
+        entries = r2.json()
+        found = next((e for e in entries if e["child_name"] == "Import Child"), None)
+        assert found is not None
+        # cleanup
+        requests.delete(f"{API}/entries/{found['id']}", headers=admin_headers, timeout=30)
