@@ -101,3 +101,18 @@ kubectl get svc frontend -n bottin-scolaire
 - Le stockage MongoDB et `/storage` sont éphémères pour les tests locaux.
 - Pour une installation de production, il faut ajouter un stockage persistant et un service MongoDB durable.
 
+## Import CSV (admin)
+
+L'administrateur peut importer un fichier CSV contenant les inscriptions (bottin). En-tête recommandé :
+
+```
+group_number,child_name,parent1_name,parent1_phone,parent1_email,parent2_name,parent2_phone,parent2_email,call_first
+```
+
+- `group_number` : identifiant du groupe tel qu'utilisé dans l'interface Classes
+- `child_name` : nom de l'enfant
+- `parent1_*` et `parent2_*` : informations des parents
+- `call_first` : `parent1` ou `parent2` (optionnel)
+
+Le fichier accepte la virgule ou le point-virgule comme séparateur et ignore l'en-tête.
+

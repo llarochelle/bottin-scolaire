@@ -417,6 +417,87 @@ async def import_allowed_emails_csv(file: UploadFile = File(...), admin: dict = 
     return {"added": added, "skipped": skipped}
 
 
+@api_router.post("/admin/import")
+async def import_bottin_csv(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+    """Import CSV of directory entries.
+
+    Expected columns (case-insensitive):
+      - class_id or group_number (preferred: group_number to match existing classes)
+      - child_name
+      - parent1_name, parent1_phone, parent1_email
+      - parent2_name, parent2_phone, parent2_email (optional)
+      - call_first (parent1|parent2) optional
+
+    Rows are upserted by class + child_name.
+    """
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("latin-1")
+
+    reader = csv.DictReader(io.StringIO(text))
+    imported = 0
+    updated = 0
+    errors = []
+    for i, row in enumerate(reader, start=1):
+        try:
+            # normalize keys
+            r = {k.strip().lower(): (v or "").strip() for k, v in row.items()}
+
+            # determine class id: prefer explicit class_id (ObjectId) or lookup by group_number
+            class_id = r.get("class_id") or r.get("class") or r.get("group_number") or r.get("group")
+            if not class_id:
+                raise ValueError("Missing class identifier (class_id or group_number)")
+
+            # try to find class by group_number if not an ObjectId-like string
+            target_class = None
+            if re.fullmatch(r"[0-9a-fA-F]{24}", class_id):
+                target_class = await db.classes.find_one({"_id": ObjectId(class_id)})
+            if not target_class:
+                # treat as group number
+                target_class = await db.classes.find_one({"group_number": class_id})
+            if not target_class:
+                raise ValueError(f"Classe introuvable: {class_id}")
+
+            child_name = r.get("child_name") or r.get("name") or r.get("child")
+            if not child_name:
+                raise ValueError("Missing child_name")
+
+            p1 = {
+                "name": r.get("parent1_name") or r.get("parent_name") or r.get("parent1") or "",
+                "phone": r.get("parent1_phone") or r.get("parent_phone1") or r.get("parent_phone") or "",
+                "email": (r.get("parent1_email") or r.get("parent_email1") or r.get("parent_email") or "").lower(),
+            }
+            p2 = {
+                "name": r.get("parent2_name") or r.get("parent2") or "",
+                "phone": r.get("parent2_phone") or "",
+                "email": (r.get("parent2_email") or "").lower(),
+            }
+            call_first = (r.get("call_first") or "parent1").lower()
+            if call_first not in ("parent1", "parent2"):
+                call_first = "parent1"
+
+            doc = {
+                "class_id": str(target_class["_id"]),
+                "child_name": child_name,
+                "parent1": p1,
+                "parent2": p2 if (p2["name"] or p2["phone"] or p2["email"]) else None,
+                "call_first": call_first,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+            res = await db.entries.update_one({"class_id": doc["class_id"], "child_name": doc["child_name"]}, {"$set": doc}, upsert=True)
+            if res.matched_count:
+                updated += 1
+            else:
+                imported += 1
+        except Exception as e:
+            errors.append({"row": i, "error": str(e)})
+
+    return {"imported": imported, "updated": updated, "errors": errors}
+
+
 @api_router.delete("/admin/allowed-emails")
 async def purge_allowed_emails(admin: dict = Depends(require_admin)):
     res = await db.allowed_emails.delete_many({})

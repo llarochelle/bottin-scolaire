@@ -11,6 +11,7 @@ import { toast } from "sonner";
 const TABS = [
   { id: "classes", label: "Classes", icon: GraduationCap },
   { id: "emails", label: "Courriels autorisés", icon: Mail },
+  { id: "import", label: "Importer", icon: Upload },
   { id: "users", label: "Utilisateurs", icon: Users2 },
   { id: "cover", label: "Couverture", icon: ImageIcon },
   { id: "export", label: "Export Excel", icon: FileSpreadsheet },
@@ -42,11 +43,51 @@ export default function Admin() {
 
         {tab === "classes" && <ClassesTab />}
         {tab === "emails" && <EmailsTab />}
+        {tab === "import" && <ImportTab />}
         {tab === "users" && <UsersTab />}
         {tab === "cover" && <CoverTab />}
         {tab === "export" && <ExportTab />}
       </main>
     </div>
+  );
+}
+
+// ---------------- Import ----------------
+function ImportTab() {
+  const [importing, setImporting] = useState(false);
+
+  const importCsv = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      const { data } = await api.post("/admin/import", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const msg = `${data.imported || 0} importé(s), ${data.updated || 0} mis à jour`;
+      if (data.errors && data.errors.length) {
+        toast.warning(`${msg} — ${data.errors.length} erreur(s). Vérifier le serveur pour détails.`);
+      } else {
+        toast.success(msg);
+      }
+    } catch (err) {
+      toast.error(formatApiErrorDetail(err.response?.data?.detail));
+    } finally { setImporting(false); e.target.value = ""; }
+  };
+
+  return (
+    <Panel>
+      <h2 className="text-2xl font-bold text-slate-800 mb-2">Importer le bottin</h2>
+      <p className="text-sm text-slate-500 font-medium mb-4">CSV attendu : colonnes `group_number` (ou `class_id`), `child_name`, `parent1_name`, `parent1_phone`, `parent1_email`, optionnel `parent2_*`, `call_first`.</p>
+      <div className="bg-sky-50 border border-sky-100 rounded-2xl p-4 mb-6">
+        <p className="text-sm font-bold text-slate-700 mb-1">Importer un fichier CSV</p>
+        <p className="text-xs text-slate-500 font-medium mb-3">Séparateur virgule ou point-virgule. L'en-tête peut être présent.</p>
+        <label className="inline-flex items-center gap-2 bg-white border-2 border-slate-200 text-slate-700 font-bold rounded-full px-5 py-2.5 cursor-pointer hover:border-primary transition-colors">
+          <input data-testid="bottin-csv-input" type="file" accept=".csv,text/csv" onChange={importCsv} className="hidden" />
+          {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Choisir un fichier CSV
+        </label>
+      </div>
+    </Panel>
   );
 }
 
