@@ -99,25 +99,52 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
 
 # ---------------- Object storage ----------------
 APP_NAME = "bottin-scolaire"
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+def validate_file_size(size: int, max_size: int = MAX_FILE_SIZE) -> None:
+    """Validate file size to prevent DoS attacks."""
+    if size > max_size:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Fichier trop volumineux (max {max_size // 1024 // 1024}MB)",
+        )
 
 
 def put_object(path: str, data: bytes, content_type: str) -> dict:
-    file_path = STORAGE_ROOT / path
+    # Security: file size already validated by caller, but check again
+    validate_file_size(len(data))
+    
+    # Security: prevent path traversal attacks
+    if ".." in path or path.startswith("/"):
+        raise HTTPException(status_code=400, detail="Chemin invalide")
+    safe_path = str(Path(path).name)
+    if not safe_path:
+        raise HTTPException(status_code=400, detail="Nom de fichier invalide")
+    
+    file_path = STORAGE_ROOT / safe_path
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
     file_path.write_bytes(data)
 
     return {
-        "path": path,
-        "storage_path": path,
+        "path": safe_path,
+        "storage_path": safe_path,
     }
 
 
 def get_object(path: str):
-    file_path = STORAGE_ROOT / path
+    # Security: prevent path traversal attacks
+    if ".." in path or path.startswith("/"):
+        raise HTTPException(status_code=400, detail="Chemin invalide")
+    safe_path = str(Path(path).name)
+    if not safe_path:
+        raise HTTPException(status_code=400, detail="Nom de fichier invalide")
+    
+    file_path = STORAGE_ROOT / safe_path
 
     if not file_path.exists():
-        raise FileNotFoundError(path)
+        raise FileNotFoundError(safe_path)
 
     content_type, _ = mimetypes.guess_type(str(file_path))
 
@@ -285,7 +312,9 @@ async def list_entries(user: dict = Depends(get_current_user), class_id: Optiona
     if class_id:
         query["class_id"] = class_id
     if search:
-        query["child_name"] = {"$regex": search.strip(), "$options": "i"}
+        # Security: escape regex special characters to prevent NoSQL injection
+        safe_search = re.escape(search.strip())
+        query["child_name"] = {"$regex": safe_search, "$options": "i"}
     entries = await db.entries.find(query).sort("child_name", 1).to_list(5000)
     return [serialize(e) for e in entries]
 
@@ -384,7 +413,13 @@ async def add_single_allowed_email(data: SingleEmailInput, admin: dict = Depends
 
 @api_router.post("/admin/allowed-emails/csv")
 async def import_allowed_emails_csv(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
-    raw = (await file.read())
+    raw = await file.read()
+    
+    # Security: validate file size and MIME type
+    validate_file_size(len(raw))
+    if file.content_type not in ("text/csv", "application/csv", "text/plain"):
+        raise HTTPException(status_code=400, detail="Fichier CSV requis")
+    
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError:
@@ -431,6 +466,12 @@ async def import_bottin_csv(file: UploadFile = File(...), admin: dict = Depends(
     Rows are upserted by class + child_name.
     """
     raw = await file.read()
+    
+    # Security: validate file size and MIME type
+    validate_file_size(len(raw))
+    if file.content_type not in ("text/csv", "application/csv", "text/plain"):
+        raise HTTPException(status_code=400, detail="Fichier CSV requis")
+    
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError:
@@ -564,9 +605,22 @@ async def purge_users(admin: dict = Depends(require_admin)):
 # ---------------- Cover image ----------------
 @api_router.post("/admin/cover")
 async def upload_cover(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
-    ext = file.filename.split(".")[-1].lower() if "." in file.filename else "png"
-    path = f"{APP_NAME}/cover/{uuid.uuid4()}.{ext}"
     data = await file.read()
+    
+    # Security: validate file size and MIME type
+    validate_file_size(len(data))
+    allowed_types = ("image/png", "image/jpeg", "image/jpg", "image/gif")
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail="Format non supporté. PNG, JPG, GIF uniquement.",
+        )
+    
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else "png"
+    # Whitelist extensions
+    if ext not in ("png", "jpg", "jpeg", "gif"):
+        ext = "png"
+    path = f"{APP_NAME}/cover/{uuid.uuid4()}.{ext}"
     result = put_object(path, data, file.content_type or "image/png")
     await db.settings.update_one(
         {"key": "cover"},
