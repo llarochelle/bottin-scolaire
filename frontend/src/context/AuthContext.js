@@ -8,17 +8,10 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const fetchMe = async () => {
-    const token = localStorage.getItem("bottin_token");
-    if (!token) {
-      setUser(false);
-      setLoading(false);
-      return;
-    }
     try {
       const { data } = await api.get("/auth/me");
       setUser(data);
     } catch {
-      localStorage.removeItem("bottin_token");
       setUser(false);
     } finally {
       setLoading(false);
@@ -31,13 +24,13 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const { data } = await api.post("/auth/login", { email, password });
-    localStorage.setItem("bottin_token", data.token);
+    // Security: token is now in HttpOnly cookie, not returned in JSON
     setUser(data.user);
     return data.user;
   };
 
   const logout = () => {
-    localStorage.removeItem("bottin_token");
+    // Token cleanup is handled by browser - HttpOnly cookies cannot be accessed by JS
     setUser(false);
   };
 

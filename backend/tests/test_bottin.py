@@ -247,9 +247,9 @@ class TestCoverExport:
         assert "spreadsheetml" in ct, f"bad content-type: {ct}"
         assert len(r.content) > 100
 
-    def test_export_excel_token_query(self, admin_token):
-        """New: export must accept ?token=<jwt> for new-tab download."""
-        r = requests.get(f"{API}/admin/export", params={"token": admin_token}, timeout=60)
+    def test_export_excel_auth_header(self, admin_headers):
+        """Export uses Authorization header with HttpOnly cookies."""
+        r = requests.get(f"{API}/admin/export", headers=admin_headers, timeout=60)
         assert r.status_code == 200, f"expected 200, got {r.status_code} {r.text[:200]}"
         ct = r.headers.get("content-type", "")
         assert "spreadsheetml" in ct, f"bad content-type: {ct}"
@@ -258,16 +258,16 @@ class TestCoverExport:
         assert r.content[:2] == b"PK", "Not a valid xlsx file"
 
     def test_export_excel_bad_token(self):
-        r = requests.get(f"{API}/admin/export", params={"token": "not-a-valid-jwt"}, timeout=30)
+        r = requests.get(f"{API}/admin/export", headers={"Authorization": "Bearer not-a-valid-jwt"}, timeout=30)
         assert r.status_code == 401
 
     def test_export_excel_no_token(self):
         r = requests.get(f"{API}/admin/export", timeout=30)
         assert r.status_code == 401
 
-    def test_export_excel_parent_token_forbidden(self, parent_token):
+    def test_export_excel_parent_token_forbidden(self, parent_headers):
         """Parent token must get 403."""
-        r = requests.get(f"{API}/admin/export", params={"token": parent_token}, timeout=30)
+        r = requests.get(f"{API}/admin/export", headers=parent_headers, timeout=30)
         assert r.status_code == 403, f"expected 403 for parent token, got {r.status_code} {r.text[:200]}"
 
 

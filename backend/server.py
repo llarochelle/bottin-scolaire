@@ -7,8 +7,12 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, UploadFile, File, Query, Header
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response, StreamingResponse, JSONResponse
 from starlette.middleware.cors import CORSMiddleware
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorClient
 import logging
 from pydantic import BaseModel, Field, EmailStr
@@ -39,8 +43,21 @@ STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
+# Security: rate limiter
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Trop de tentatives. Veuillez réessayer dans quelques minutes."},
+    )
+
 # ---------------- Auth helpers ----------------
 JWT_ALGORITHM = "HS256"
+COOKIE_SECURE = os.environ.get("SECURE_COOKIES", "false").lower() == "true"
+COOKIE_SAMESITE = "strict"
 
 
 def get_jwt_secret() -> str:
@@ -56,6 +73,14 @@ def verify_password(plain: str, hashed: str) -> bool:
         return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
     except Exception:
         return False
+
+
+def validate_object_id(id_str: str) -> ObjectId:
+    """Validate and return ObjectId, raise HTTPException if invalid."""
+    try:
+        return ObjectId(id_str)
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=400, detail="ID invalide")
 
 
 def create_access_token(user_id: str, email: str) -> str:
@@ -211,7 +236,8 @@ def serialize(doc: dict) -> dict:
 
 # ---------------- Auth endpoints ----------------
 @api_router.post("/auth/login")
-async def login(data: LoginInput):
+@limiter.limit("5/minute")
+async def login(request: Request, data: LoginInput):
     email = data.email.lower().strip()
     user = await db.users.find_one({"email": email})
     if not user:
@@ -238,7 +264,17 @@ async def login(data: LoginInput):
             raise HTTPException(status_code=401, detail="Identifiants invalides")
 
     token = create_access_token(str(user["_id"]), email)
-    return {"token": token, "user": serialize(user)}
+    # Security: return token in HttpOnly cookie instead of JSON body
+    response = JSONResponse({"user": serialize(user)})
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        secure=COOKIE_SECURE,  # HTTPS in production
+        samesite=COOKIE_SAMESITE,  # CSRF protection
+        max_age=7 * 24 * 60 * 60,  # 7 days
+    )
+    return response
 
 
 @api_router.get("/auth/me")
@@ -288,11 +324,12 @@ async def create_class(data: ClassInput, admin: dict = Depends(require_admin)):
 
 @api_router.put("/classes/{class_id}")
 async def update_class(class_id: str, data: ClassInput, admin: dict = Depends(require_admin)):
+    obj_id = validate_object_id(class_id)
     await db.classes.update_one(
-        {"_id": ObjectId(class_id)},
+        {"_id": obj_id},
         {"$set": {"group_number": data.group_number.strip(), "teachers": data.teachers.strip()}},
     )
-    doc = await db.classes.find_one({"_id": ObjectId(class_id)})
+    doc = await db.classes.find_one({"_id": obj_id})
     if not doc:
         raise HTTPException(status_code=404, detail="Classe introuvable")
     return serialize(doc)
@@ -300,7 +337,8 @@ async def update_class(class_id: str, data: ClassInput, admin: dict = Depends(re
 
 @api_router.delete("/classes/{class_id}")
 async def delete_class(class_id: str, admin: dict = Depends(require_admin)):
-    await db.classes.delete_one({"_id": ObjectId(class_id)})
+    obj_id = validate_object_id(class_id)
+    await db.classes.delete_one({"_id": obj_id})
     await db.entries.delete_many({"class_id": class_id})
     return {"message": "Classe supprimée"}
 
@@ -343,13 +381,14 @@ async def create_entry(data: EntryInput, user: dict = Depends(get_current_user))
 
 @api_router.put("/entries/{entry_id}")
 async def update_entry(entry_id: str, data: EntryInput, user: dict = Depends(get_current_user)):
-    entry = await db.entries.find_one({"_id": ObjectId(entry_id)})
+    obj_id = validate_object_id(entry_id)
+    entry = await db.entries.find_one({"_id": obj_id})
     if not entry:
         raise HTTPException(status_code=404, detail="Inscription introuvable")
     if user.get("role") != "admin" and entry.get("owner_email") != user["email"]:
         raise HTTPException(status_code=403, detail="Vous ne pouvez modifier que vos propres inscriptions")
     await db.entries.update_one(
-        {"_id": ObjectId(entry_id)},
+        {"_id": obj_id},
         {"$set": {
             "class_id": data.class_id,
             "child_name": data.child_name.strip(),
@@ -358,18 +397,19 @@ async def update_entry(entry_id: str, data: EntryInput, user: dict = Depends(get
             "call_first": data.call_first,
         }},
     )
-    doc = await db.entries.find_one({"_id": ObjectId(entry_id)})
+    doc = await db.entries.find_one({"_id": obj_id})
     return serialize(doc)
 
 
 @api_router.delete("/entries/{entry_id}")
 async def delete_entry(entry_id: str, user: dict = Depends(get_current_user)):
-    entry = await db.entries.find_one({"_id": ObjectId(entry_id)})
+    obj_id = validate_object_id(entry_id)
+    entry = await db.entries.find_one({"_id": obj_id})
     if not entry:
         raise HTTPException(status_code=404, detail="Inscription introuvable")
     if user.get("role") != "admin" and entry.get("owner_email") != user["email"]:
         raise HTTPException(status_code=403, detail="Action non autorisée")
-    await db.entries.delete_one({"_id": ObjectId(entry_id)})
+    await db.entries.delete_one({"_id": obj_id})
     return {"message": "Inscription supprimée"}
 
 
@@ -572,26 +612,28 @@ async def list_users(admin: dict = Depends(require_admin)):
 async def set_role(user_id: str, data: RoleInput, admin: dict = Depends(require_admin)):
     if data.role not in ("admin", "parent"):
         raise HTTPException(status_code=400, detail="Rôle invalide")
-    target = await db.users.find_one({"_id": ObjectId(user_id)})
+    obj_id = validate_object_id(user_id)
+    target = await db.users.find_one({"_id": obj_id})
     if not target:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
     if target["email"] == os.environ.get("ADMIN_EMAIL", "").lower() and data.role != "admin":
         raise HTTPException(status_code=400, detail="Impossible de rétrograder l'administrateur principal")
-    await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"role": data.role}})
-    doc = await db.users.find_one({"_id": ObjectId(user_id)})
+    await db.users.update_one({"_id": obj_id}, {"$set": {"role": data.role}})
+    doc = await db.users.find_one({"_id": obj_id})
     return serialize(doc)
 
 
 @api_router.delete("/admin/users/{user_id}")
 async def delete_user(user_id: str, admin: dict = Depends(require_admin)):
-    target = await db.users.find_one({"_id": ObjectId(user_id)})
+    obj_id = validate_object_id(user_id)
+    target = await db.users.find_one({"_id": obj_id})
     if not target:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
     if target["email"] == os.environ.get("ADMIN_EMAIL", "").lower():
         raise HTTPException(status_code=400, detail="Impossible de supprimer l'administrateur principal")
     if str(target["_id"]) == admin["_id"]:
         raise HTTPException(status_code=400, detail="Vous ne pouvez pas supprimer votre propre compte")
-    await db.users.delete_one({"_id": ObjectId(user_id)})
+    await db.users.delete_one({"_id": obj_id})
     return {"message": "Utilisateur supprimé"}
 
 
@@ -652,22 +694,8 @@ async def cover_info(user: dict = Depends(get_current_user)):
 
 # ---------------- Excel export ----------------
 @api_router.get("/admin/export")
-async def export_excel(request: Request, token: Optional[str] = Query(None)):
-    # Allow auth via query-param token (for opening in a new browser tab) or Authorization header
-    jwt_token = token
-    if not jwt_token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            jwt_token = auth_header[7:]
-    if not jwt_token:
-        raise HTTPException(status_code=401, detail="Non authentifié")
-    try:
-        payload = jwt.decode(jwt_token, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
-        user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Jeton invalide")
-    if not user or user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Accès réservé à l'administrateur")
+async def export_excel(admin: dict = Depends(require_admin)):
+    # Security: uses HttpOnly cookies for auth (no token in URL)
     classes = await db.classes.find().sort("group_number", 1).to_list(1000)
     wb = Workbook()
     ws = wb.active
@@ -711,17 +739,24 @@ async def root():
 
 app.include_router(api_router)
 
+# Security: restrict CORS to specific origins (not '*')
+cors_origins = os.environ.get('CORS_ORIGINS', 'http://localhost:3001').split(',')
+cors_origins = [o.strip() for o in cors_origins if o.strip()]
+if '*' in cors_origins:
+    logger.warning("⚠️  CORS allows all origins - NOT RECOMMENDED FOR PRODUCTION")
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_origins,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
 @app.on_event("startup")
 async def startup():
+    logger.info(f"🔒 Security config: SECURE_COOKIES={COOKIE_SECURE}, CORS_ORIGINS={cors_origins}")
     # seed admin
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@bottin.ca").lower()
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")

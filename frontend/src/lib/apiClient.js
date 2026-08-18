@@ -4,13 +4,10 @@ export const API = "/api";
 
 export const api = axios.create({
   baseURL: API,
+  withCredentials: true,  // Security: send cookies with each request
 });
 
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("bottin_token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
+// No need to manage tokens manually - cookies are sent automatically
 
 export function formatApiErrorDetail(detail) {
   if (detail == null) return "Une erreur est survenue. Veuillez réessayer.";

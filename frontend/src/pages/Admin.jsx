@@ -509,15 +509,20 @@ function ExportTab() {
   const download = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("bottin_token");
-      const url = `${API}/admin/export?token=${encodeURIComponent(token)}`;
-      // Open in a new tab: reliable even inside the preview iframe (sandboxed downloads)
-      const win = window.open(url, "_blank");
-      if (!win) {
-        // Popup blocked: fall back to top-level navigation
-        window.location.assign(url);
-      }
-      toast.success("Génération du fichier Excel…");
+      // Security: use cookies for auth instead of URL token
+      const response = await api.get("/admin/export", {
+        responseType: "blob",
+      });
+      // Create a download link from the blob
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", "bottin_scolaire.xlsx");
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success("Export téléchargé");
     } catch (err) {
       toast.error("Échec de l'export");
     } finally {
