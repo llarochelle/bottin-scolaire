@@ -6,7 +6,7 @@ import os
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, UploadFile, File, Query, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request,  UploadFile, File, Query, Header
 from fastapi.responses import Response, StreamingResponse, JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from slowapi import Limiter
@@ -42,6 +42,30 @@ STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+
+# Configuration des entêtes de sécurité (CSP, X-Frame-Options, X-Content-Type-Options, etc.)
+csp = secure.ContentSecurityPolicy().default_src("'self'")
+hsts = secure.StrictTransportSecurity().max_age(31536000).include_subdomains()
+xfo = secure.XFrameOptions().deny()
+xxp = secure.XSSProtection().enabled()
+content_type = secure.XContentTypeOptions()
+referrer = secure.ReferrerPolicy().no_referrer()
+
+secure_headers = secure.Server(
+    csp=csp,
+    hsts=hsts,
+    xfo=xfo,
+    xxp=xxp,
+    content_type=content_type,
+    referrer=referrer,
+)
+
+@app.middleware("http")
+def set_secure_headers(request: Request, call_next):
+    response: Response = call_next(request)
+    secure_headers.framework.fastapi(response)
+    response.headers["Server"] = "Server"  # Masque la version exacte du serveur
+    return response
 
 # Security: rate limiter
 limiter = Limiter(key_func=get_remote_address)
